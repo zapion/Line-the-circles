@@ -117,12 +117,6 @@
         <option value="7">7 顆</option>
       </select>
     </label>
-    <label>方向
-      <select id="dirs">
-        <option value="all" selected>橫排＋兩條斜線</option>
-        <option value="row">只限橫排</option>
-      </select>
-    </label>
     <label>對手
       <select id="mode">
         <option value="pvp" selected>雙人對戰</option>
@@ -155,7 +149,7 @@
     <ul class="rules">
       <li>圈圈排成三角形，從上到下每排 1、2、3、4、5 顆。</li>
       <li>輪到你時，在<b>同一條直線</b>上畫掉 <b>1～3 顆相連</b>、還沒被畫掉的圈圈（不能跨過已畫掉的圈圈）。</li>
-      <li>「方向」可選只能畫橫排，或也可以沿兩條斜邊方向畫。</li>
+      <li>直線只有三個方向：橫排，以及平行左、右兩條斜邊的斜線。</li>
       <li>畫掉最後一顆圈圈的人輸；所以當你讓場上只剩一顆時，對手就輸了。</li>
       <li>操作：點選圈圈（或從一顆拖到另一顆），再按「畫掉選取的圈圈」或按 Enter。</li>
     </ul>
@@ -185,7 +179,6 @@
 
   // ---------- state ----------
   let n = 5;              // number of rows (= circles in the bottom row)
-  let dirMode = 'all';
   let mode = 'pvp';
   let cells = [];         // [{r, c, x, y, idx}]
   let index = {};         // "r,c" -> idx
@@ -200,10 +193,10 @@
 
   const key = (r, c) => r + ',' + c;
 
-  function directions() {
-    // (dr, dc) unit steps along straight lines of the triangle
-    return dirMode === 'row' ? [[0, 1]] : [[0, 1], [1, 0], [1, 1]];
-  }
+  // (dr, dc) unit steps along the three straight-line directions of the triangle:
+  // horizontal row, and the two diagonals parallel to the triangle's sides.
+  const DIRECTIONS = [[0, 1], [1, 0], [1, 1]];
+  function directions() { return DIRECTIONS; }
 
   // ---------- geometry / segments ----------
   function segment(a, b) {
@@ -234,9 +227,7 @@
     const sorted = [...sel].sort((p, q) => cells[p].r - cells[q].r || cells[p].c - cells[q].c);
     const seg = segment(sorted[0], sorted[sorted.length - 1]);
     if (!seg || seg.length !== sel.length || !seg.every((i) => sel.includes(i))) {
-      return { ok: false, why: dirMode === 'row'
-        ? '選取的圈圈必須在同一橫排且相連。'
-        : '選取的圈圈必須在同一直線上且相連。' };
+      return { ok: false, why: '選取的圈圈必須在同一直線上（橫排或斜線）且相連。' };
     }
     return { ok: true, ordered: seg };
   }
@@ -323,7 +314,6 @@
   function newGame() {
     clearTimeout(aiTimer);
     n = parseInt($('rows').value, 10);
-    dirMode = $('dirs').value;
     mode = $('mode').value;
     if (mode !== 'pvp' && !aiAvailable()) {
       mode = 'pvp';
@@ -556,7 +546,7 @@
   });
   $('undo').addEventListener('click', undo);
   $('restart').addEventListener('click', newGame);
-  ['rows', 'dirs', 'mode'].forEach((id) => $(id).addEventListener('change', newGame));
+  ['rows', 'mode'].forEach((id) => $(id).addEventListener('change', newGame));
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter') confirmMove();
     else if (ev.key === 'Escape') { selection = []; render(); }
