@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>畫圈圈三角</title>
+<style>
+  :root {
+    --bg: #f6f4ef;
+    --panel: #ffffff;
+    --ink: #24211c;
+    --muted: #6f6a60;
+    --line: #d9d4c8;
+    --dot: #ffffff;
+    --dot-stroke: #3b372f;
+    --dot-dead: #e7e3da;
+    --sel: #f2b33d;
+    --p1: #2f6fdb;
+    --p2: #d9483b;
+    --ok: #2e8b57;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17161a;
+      --panel: #222127;
+      --ink: #ece9e2;
+      --muted: #a29d93;
+      --line: #3a3842;
+      --dot: #2c2b33;
+      --dot-stroke: #d8d3c8;
+      --dot-dead: #26252b;
+      --sel: #f2b33d;
+      --p1: #5d93f0;
+      --p2: #ef6b5f;
+      --ok: #4cbf80;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17161a; --panel: #222127; --ink: #ece9e2; --muted: #a29d93; --line: #3a3842;
+    --dot: #2c2b33; --dot-stroke: #d8d3c8; --dot-dead: #26252b; --sel: #f2b33d;
+    --p1: #5d93f0; --p2: #ef6b5f; --ok: #4cbf80; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+    line-height: 1.5;
+  }
+  main {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 20px 16px 40px;
+  }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 16px; font-size: .95rem; }
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 10px 14px; margin-bottom: 12px; font-size: .95rem;
+  }
+  .controls label { display: inline-flex; gap: 6px; align-items: center; }
+  select, button {
+    font: inherit; color: var(--ink); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px;
+  }
+  button { cursor: pointer; }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); font-weight: 600; }
+  .status {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    margin: 4px 0 8px; min-height: 2.4em;
+  }
+  .turn { font-size: 1.15rem; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .chip { width: 14px; height: 14px; border-radius: 50%; display: inline-block; flex: none; }
+  .left { color: var(--muted); font-size: .95rem; white-space: nowrap; }
+  .board {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+    padding: 8px; touch-action: none; user-select: none; -webkit-user-select: none;
+  }
+  svg { display: block; width: 100%; height: auto; max-height: 62vh; }
+  .dot { fill: var(--dot); stroke: var(--dot-stroke); stroke-width: 2.5; transition: fill .12s; cursor: pointer; }
+  .dot.dead { fill: var(--dot-dead); stroke: var(--line); cursor: default; }
+  .dot.sel { fill: var(--sel); stroke: var(--sel); }
+  .stroke { stroke-width: 9; stroke-linecap: round; fill: none; opacity: .9; }
+  .preview { stroke: var(--sel); stroke-width: 9; stroke-linecap: round; opacity: .55; fill: none; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .actions .primary { flex: 1 1 160px; }
+  .msg { color: var(--muted); font-size: .9rem; margin-top: 8px; min-height: 1.4em; }
+  .msg.err { color: var(--p2); }
+  .banner {
+    margin-top: 12px; padding: 14px 16px; border-radius: 12px; font-weight: 600; font-size: 1.1rem;
+    border: 2px solid currentColor; display: none;
+  }
+  .banner.show { display: block; }
+  details { margin-top: 20px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; }
+  summary { cursor: pointer; font-weight: 600; }
+  ol.log { margin: 8px 0 0; padding-left: 1.4em; color: var(--muted); font-size: .9rem; }
+  ul.rules { margin: 8px 0 0; padding-left: 1.2em; font-size: .95rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>畫圈圈三角</h1>
+  <p class="sub">兩人輪流，每次在一直線上畫掉 1～3 顆相連的圈圈。<b>畫掉最後一顆的人輸。</b></p>
+
+  <div class="controls">
+    <label>最底排
+      <select id="rows">
+        <option value="3">3 顆</option>
+        <option value="4">4 顆</option>
+        <option value="5" selected>5 顆</option>
+        <option value="6">6 顆</option>
+        <option value="7">7 顆</option>
+      </select>
+    </label>
+    <label>方向
+      <select id="dirs">
+        <option value="all" selected>橫排＋兩條斜線</option>
+        <option value="row">只限橫排</option>
+      </select>
+    </label>
+    <label>對手
+      <select id="mode">
+        <option value="pvp" selected>雙人對戰</option>
+        <option value="ai2">電腦（後手）</option>
+        <option value="ai1">電腦（先手）</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="status">
+    <div class="turn" id="turn"></div>
+    <div class="left" id="left"></div>
+  </div>
+
+  <div class="board" id="board">
+    <svg id="svg" xmlns="http://www.w3.org/2000/svg" aria-label="圈圈棋盤"></svg>
+  </div>
+
+  <div class="actions">
+    <button class="primary" id="confirm" disabled>畫掉選取的圈圈</button>
+    <button id="clear">取消選取</button>
+    <button id="undo">悔棋</button>
+    <button id="restart">重新開始</button>
+  </div>
+  <div class="msg" id="msg">點圈圈選取，或在圈圈上拖曳畫線。</div>
+  <div class="banner" id="banner"></div>
+
+  <details open>
+    <summary>規則與操作</summary>
+    <ul class="rules">
+      <li>圈圈排成三角形，從上到下每排 1、2、3、4、5 顆。</li>
+      <li>輪到你時，在<b>同一條直線</b>上畫掉 <b>1～3 顆相連</b>、還沒被畫掉的圈圈（不能跨過已畫掉的圈圈）。</li>
+      <li>「方向」可選只能畫橫排，或也可以沿兩條斜邊方向畫。</li>
+      <li>畫掉最後一顆圈圈的人輸；所以當你讓場上只剩一顆時，對手就輸了。</li>
+      <li>操作：點選圈圈（或從一顆拖到另一顆），再按「畫掉選取的圈圈」或按 Enter。</li>
+    </ul>
+  </details>
+
+  <details>
+    <summary>棋譜</summary>
+    <ol class="log" id="log"></ol>
+  </details>
+</main>
+
+<script>
+(() => {
+  'use strict';
+
+  const SPACING = 64;     // distance between circle centres
+  const R = 22;           // circle radius
+  const PAD = 40;
+  const PLAYERS = [
+    { name: '玩家一', color: 'var(--p1)' },
+    { name: '玩家二', color: 'var(--p2)' },
+  ];
+
+  const $ = (id) => document.getElementById(id);
+  const svg = $('svg');
+  const SVGNS = 'http://www.w3.org/2000/svg';
+
+  // ---------- state ----------
+  let n = 5;              // number of rows (= circles in the bottom row)
+  let dirMode = 'all';
+  let mode = 'pvp';
+  let cells = [];         // [{r, c, x, y, idx}]
+  let index = {};         // "r,c" -> idx
+  let dead = [];          // bool per idx
+  let moves = [];         // [{player, cells:[idx...]}]
+  let current = 0;        // 0 or 1
+  let selection = [];     // idx[]
+  let over = false;
+  let legalMasks = [];    // all legal segments as bitmasks (for the AI)
+  let memo = null;
+  let aiTimer = null;
+
+  const key = (r, c) => r + ',' + c;
+
+  function directions() {
+    // (dr, dc) unit steps along straight lines of the triangle
+    return dirMode === 'row' ? [[0, 1]] : [[0, 1], [1, 0], [1, 1]];
+  }
+
+  // ---------- geometry / segments ----------
+  function segment(a, b) {
+    // Return the list of cell indexes on the straight segment a..b, or null.
+    const A = cells[a], B = cells[b];
+    let dr = B.r - A.r, dc = B.c - A.c;
+    const steps = Math.max(Math.abs(dr), Math.abs(dc));
+    if (steps === 0) return [a];
+    const sr = dr / steps, sc = dc / steps;
+    if (!Number.isInteger(sr) || !Number.isInteger(sc)) return null;
+    if (Math.abs(dr) !== 0 && Math.abs(dc) !== 0 && Math.abs(dr) !== Math.abs(dc)) return null;
+    const allowed = directions().some(([ur, uc]) =>
+      (ur === sr && uc === sc) || (ur === -sr && uc === -sc));
+    if (!allowed) return null;
+    const out = [];
+    for (let k = 0; k <= steps; k++) {
+      const idx = index[key(A.r + sr * k, A.c + sc * k)];
+      if (idx === undefined) return null;
+      out.push(idx);
+    }
+    return out;
+  }
+
+  function validate(sel) {
+    if (sel.length === 0) return { ok: false, why: '' };
+    if (sel.length > 3) return { ok: false, why: '一次最多畫 3 顆。' };
+    if (sel.some((i) => dead[i])) return { ok: false, why: '不能選已畫掉的圈圈。' };
+    const sorted = [...sel].sort((p, q) => cells[p].r - cells[q].r || cells[p].c - cells[q].c);
+    const seg = segment(sorted[0], sorted[sorted.length - 1]);
+    if (!seg || seg.length !== sel.length || !seg.every((i) => sel.includes(i))) {
+      return { ok: false, why: dirMode === 'row'
+        ? '選取的圈圈必須在同一橫排且相連。'
+        : '選取的圈圈必須在同一直線上且相連。' };
+    }
+    return { ok: true, ordered: seg };
+  }
+
+  // ---------- AI (exact solver over bitmasks) ----------
+  function buildLegalMasks() {
+    const set = new Set();
+    for (const cell of cells) {
+      for (const [dr, dc] of directions()) {
+        let mask = 0;
+        for (let k = 0; k < 3; k++) {
+          const idx = index[key(cell.r + dr * k, cell.c + dc * k)];
+          if (idx === undefined) break;
+          mask |= (1 << idx);
+          set.add(mask);
+        }
+      }
+    }
+    legalMasks = [...set];
+  }
+
+  // win(s): can the player to move force a win with remaining-set s?
+  // Taking the last circle loses, so win(0) = true (the opponent just took the last one).
+  function win(s) {
+    if (s === 0) return true;
+    const m = memo[s];
+    if (m) return m === 1;
+    let res = false;
+    for (const mv of legalMasks) {
+      if ((mv & s) === mv && !win(s & ~mv)) { res = true; break; }
+    }
+    memo[s] = res ? 1 : 2;
+    return res;
+  }
+
+  function aiAvailable() { return n * (n + 1) / 2 <= 21; }
+
+  function remainingMask() {
+    let s = 0;
+    dead.forEach((d, i) => { if (!d) s |= (1 << i); });
+    return s;
+  }
+
+  function aiChooseMove() {
+    const s = remainingMask();
+    if (!memo) memo = new Uint8Array(1 << cells.length);
+    const options = legalMasks.filter((mv) => (mv & s) === mv);
+    const winning = options.filter((mv) => !win(s & ~mv));
+    let pool = winning;
+    if (pool.length === 0) {
+      // losing position: avoid taking the last circle if possible, prefer small moves
+      const safe = options.filter((mv) => (s & ~mv) !== 0);
+      pool = safe.length ? safe : options;
+    }
+    const mv = pool[Math.floor(Math.random() * pool.length)];
+    const sel = [];
+    for (let i = 0; i < cells.length; i++) if (mv & (1 << i)) sel.push(i);
+    return validate(sel).ordered;
+  }
+
+  function isAiTurn() {
+    if (over) return false;
+    if (mode === 'ai2') return current === 1;
+    if (mode === 'ai1') return current === 0;
+    return false;
+  }
+
+  function playerLabel(p) {
+    if (mode === 'ai2') return p === 1 ? '電腦' : '你';
+    if (mode === 'ai1') return p === 0 ? '電腦' : '你';
+    return PLAYERS[p].name;
+  }
+
+  function scheduleAi() {
+    clearTimeout(aiTimer);
+    if (!isAiTurn()) return;
+    aiTimer = setTimeout(() => {
+      const seg = aiChooseMove();
+      applyMove(seg);
+    }, 550);
+  }
+
+  // ---------- game flow ----------
+  function newGame() {
+    clearTimeout(aiTimer);
+    n = parseInt($('rows').value, 10);
+    dirMode = $('dirs').value;
+    mode = $('mode').value;
+    if (mode !== 'pvp' && !aiAvailable()) {
+      mode = 'pvp';
+      $('mode').value = 'pvp';
+      setMsg('電腦對手目前支援到最底排 6 顆，已切回雙人對戰。', true);
+    } else {
+      setMsg('點圈圈選取，或在圈圈上拖曳畫線。');
+    }
+    cells = []; index = {};
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c <= r; c++) {
+        const idx = cells.length;
+        cells.push({
+          r, c, idx,
+          x: PAD + R + (c - r / 2 + (n - 1) / 2) * SPACING,
+          y: PAD + R + r * SPACING * Math.sqrt(3) / 2,
+        });
+        index[key(r, c)] = idx;
+      }
+    }
+    dead = cells.map(() => false);
+    moves = [];
+    current = 0;
+    selection = [];
+    over = false;
+    memo = null;
+    buildLegalMasks();
+    render();
+    scheduleAi();
+  }
+
+  function applyMove(seg) {
+    if (over || !seg) return;
+    seg.forEach((i) => { dead[i] = true; });
+    moves.push({ player: current, cells: seg });
+    selection = [];
+    const left = dead.filter((d) => !d).length;
+    if (left === 0) {
+      over = true;
+      endGame(1 - current, `${playerLabel(current)}畫掉了最後一顆。`);
+    } else if (left === 1) {
+      over = true;
+      endGame(current, `只剩最後一顆，${playerLabel(1 - current)}只能畫掉它。`);
+    } else {
+      current = 1 - current;
+    }
+    render();
+    scheduleAi();
+  }
+
+  function endGame(winner, reason) {
+    const b = $('banner');
+    b.textContent = `${reason} ${playerLabel(winner)}獲勝！`;
+    b.style.color = PLAYERS[winner].color;
+    b.classList.add('show');
+  }
+
+  function undo() {
+    if (moves.length === 0) return;
+    clearTimeout(aiTimer);
+    // In AI mode, undo back to the human's turn.
+    const popOne = () => {
+      const last = moves.pop();
+      last.cells.forEach((i) => { dead[i] = false; });
+      current = last.player;
+    };
+    popOne();
+    over = false;
+    while (moves.length && isAiTurn()) popOne();
+    selection = [];
+    $('banner').classList.remove('show');
+    render();
+    scheduleAi();
+  }
+
+  // ---------- rendering ----------
+  function el(tag, attrs) {
+    const e = document.createElementNS(SVGNS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+
+  function strokePath(seg) {
+    const a = cells[seg[0]], b = cells[seg[seg.length - 1]];
+    let dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    if (len === 0) {
+      // single circle: a short slash through it
+      return { x1: a.x - R * 0.85, y1: a.y + R * 0.85, x2: a.x + R * 0.85, y2: a.y - R * 0.85 };
+    }
+    dx /= len; dy /= len;
+    const ext = R * 0.9;
+    return { x1: a.x - dx * ext, y1: a.y - dy * ext, x2: b.x + dx * ext, y2: b.y + dy * ext };
+  }
+
+  function render() {
+    const w = PAD * 2 + R * 2 + (n - 1) * SPACING;
+    const h = PAD * 2 + R * 2 + (n - 1) * SPACING * Math.sqrt(3) / 2;
+    svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    svg.innerHTML = '';
+
+    for (const cell of cells) {
+      const cls = ['dot'];
+      if (dead[cell.idx]) cls.push('dead');
+      else if (selection.includes(cell.idx)) cls.push('sel');
+      svg.appendChild(el('circle', { cx: cell.x, cy: cell.y, r: R, class: cls.join(' '), 'data-idx': cell.idx }));
+    }
+    for (const mv of moves) {
+      const p = strokePath(mv.cells);
+      const line = el('line', { ...p, class: 'stroke' });
+      line.style.stroke = PLAYERS[mv.player].color;
+      svg.appendChild(line);
+    }
+    const v = validate(selection);
+    if (v.ok && selection.length > 0) {
+      svg.appendChild(el('line', { ...strokePath(v.ordered), class: 'preview' }));
+    }
+
+    // status
+    const left = dead.filter((d) => !d).length;
+    $('left').textContent = `剩下 ${left} / ${cells.length} 顆`;
+    const turn = $('turn');
+    turn.innerHTML = '';
+    if (!over) {
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.style.background = PLAYERS[current].color;
+      turn.appendChild(chip);
+      turn.appendChild(document.createTextNode(
+        isAiTurn() ? '電腦思考中…' : `輪到 ${playerLabel(current)}`));
+    } else {
+      turn.textContent = '遊戲結束';
+      turn.style.color = '';
+    }
+    if (!over) $('banner').classList.remove('show');
+
+    $('confirm').disabled = over || isAiTurn() || !v.ok;
+    $('clear').disabled = selection.length === 0;
+    $('undo').disabled = moves.length === 0 || (mode !== 'pvp' && !moves.some((m) => !isAiPlayer(m.player)));
+    if (selection.length && !v.ok && v.why) setMsg(v.why, true);
+    else if (!over && selection.length && v.ok) setMsg(`已選 ${selection.length} 顆，按「畫掉」確認。`);
+
+    const log = $('log');
+    log.innerHTML = '';
+    for (const mv of moves) {
+      const li = document.createElement('li');
+      const pos = mv.cells.map((i) => `(${cells[i].r + 1}-${cells[i].c + 1})`).join(' ');
+      li.textContent = `${playerLabel(mv.player)}：畫掉 ${mv.cells.length} 顆 ${pos}`;
+      log.appendChild(li);
+    }
+  }
+
+  function isAiPlayer(p) {
+    return (mode === 'ai2' && p === 1) || (mode === 'ai1' && p === 0);
+  }
+
+  function setMsg(text, err) {
+    const m = $('msg');
+    m.textContent = text;
+    m.classList.toggle('err', !!err);
+  }
+
+  // ---------- input ----------
+  function cellAtEvent(ev) {
+    const pt = svg.createSVGPoint();
+    pt.x = ev.clientX; pt.y = ev.clientY;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return null;
+    const p = pt.matrixTransform(ctm.inverse());
+    let best = null, bestD = Infinity;
+    for (const cell of cells) {
+      const d = Math.hypot(cell.x - p.x, cell.y - p.y);
+      if (d < bestD) { bestD = d; best = cell.idx; }
+    }
+    return bestD <= R * 1.25 ? best : null;
+  }
+
+  let drag = null; // {start, moved, before}
+
+  svg.addEventListener('pointerdown', (ev) => {
+    if (over || isAiTurn()) return;
+    const idx = cellAtEvent(ev);
+    if (idx === null || dead[idx]) return;
+    ev.preventDefault();
+    svg.setPointerCapture(ev.pointerId);
+    drag = { start: idx, moved: false, before: selection.slice() };
+  });
+
+  svg.addEventListener('pointermove', (ev) => {
+    if (!drag) return;
+    const idx = cellAtEvent(ev);
+    if (idx === null || idx === drag.start) return;
+    const seg = segment(drag.start, idx);
+    if (seg && seg.length <= 3 && seg.every((i) => !dead[i])) {
+      drag.moved = true;
+      selection = seg;
+      render();
+    }
+  });
+
+  function endDrag() {
+    if (!drag) return;
+    const { start, moved } = drag;
+    drag = null;
+    if (!moved) {
+      // tap: toggle; if it would make an invalid selection, start over from this circle
+      if (selection.includes(start)) {
+        selection = selection.filter((i) => i !== start);
+      } else {
+        const next = [...selection, start];
+        selection = validate(next).ok ? next : [start];
+      }
+      if (selection.length === 0) setMsg('點圈圈選取，或在圈圈上拖曳畫線。');
+      render();
+    }
+  }
+  svg.addEventListener('pointerup', endDrag);
+  svg.addEventListener('pointercancel', () => { drag = null; });
+
+  function confirmMove() {
+    const v = validate(selection);
+    if (!v.ok || over || isAiTurn()) return;
+    setMsg('點圈圈選取，或在圈圈上拖曳畫線。');
+    applyMove(v.ordered);
+  }
+
+  $('confirm').addEventListener('click', confirmMove);
+  $('clear').addEventListener('click', () => {
+    selection = []; setMsg('點圈圈選取，或在圈圈上拖曳畫線。'); render();
+  });
+  $('undo').addEventListener('click', undo);
+  $('restart').addEventListener('click', newGame);
+  ['rows', 'dirs', 'mode'].forEach((id) => $(id).addEventListener('change', newGame));
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') confirmMove();
+    else if (ev.key === 'Escape') { selection = []; render(); }
+  });
+
+  newGame();
+})();
+</script>
+</body>
+</html>
