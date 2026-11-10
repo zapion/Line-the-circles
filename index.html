@@ -91,6 +91,8 @@
   .actions .primary { flex: 1 1 160px; }
   .msg { color: var(--muted); font-size: .9rem; margin-top: 8px; min-height: 1.4em; }
   .msg.err { color: var(--p2); }
+  .msg.hint { color: var(--ok); font-weight: 600; }
+  .msg.hint.bad { color: var(--p2); }
   .banner {
     margin-top: 12px; padding: 14px 16px; border-radius: 12px; font-weight: 600; font-size: 1.1rem;
     border: 2px solid currentColor; display: none;
@@ -138,6 +140,7 @@
   <div class="actions">
     <button class="primary" id="confirm" disabled>畫掉選取的圈圈</button>
     <button id="clear">取消選取</button>
+    <button id="hint" hidden>提示</button>
     <button id="undo">悔棋</button>
     <button id="restart">重新開始</button>
   </div>
@@ -152,6 +155,7 @@
       <li>直線只有三個方向：橫排，以及平行左、右兩條斜邊的斜線。</li>
       <li>畫掉最後一顆圈圈的人輸；所以當你讓場上只剩一顆時，對手就輸了。</li>
       <li>操作：點選圈圈（或從一顆拖到另一顆），再按「畫掉選取的圈圈」或按 Enter。</li>
+      <li>和電腦對戰時可以按「提示」：會告訴你目前是必勝還是必敗，必勝時幫你選好一步贏的走法（再按一次換另一種）。</li>
     </ul>
   </details>
 
@@ -190,6 +194,8 @@
   let legalMasks = [];    // all legal segments as bitmasks (for the AI)
   let memo = null;
   let aiTimer = null;
+  let hint = null;        // {sel:[idx], text, bad} — last hint shown
+  let hintCycle = 0;
 
   const key = (r, c) => r + ',' + c;
 
@@ -271,11 +277,23 @@
     return s;
   }
 
-  function aiChooseMove() {
+  function maskToCells(mv) {
+    const sel = [];
+    for (let i = 0; i < cells.length; i++) if (mv & (1 << i)) sel.push(i);
+    return sel;
+  }
+
+  // All legal moves from the current position, and the ones that force a win.
+  function analyse() {
     const s = remainingMask();
     if (!memo) memo = new Uint8Array(1 << cells.length);
     const options = legalMasks.filter((mv) => (mv & s) === mv);
     const winning = options.filter((mv) => !win(s & ~mv));
+    return { s, options, winning };
+  }
+
+  function aiChooseMove() {
+    const { s, options, winning } = analyse();
     let pool = winning;
     if (pool.length === 0) {
       // losing position: avoid taking the last circle if possible, prefer small moves
@@ -283,10 +301,30 @@
       pool = safe.length ? safe : options;
     }
     const mv = pool[Math.floor(Math.random() * pool.length)];
-    const sel = [];
-    for (let i = 0; i < cells.length; i++) if (mv & (1 << i)) sel.push(i);
-    return validate(sel).ordered;
+    return validate(maskToCells(mv)).ordered;
   }
+
+  function showHint() {
+    if (mode === 'pvp' || over || isAiTurn()) return;
+    const { winning } = analyse();
+    if (winning.length === 0) {
+      selection = [];
+      hint = { sel: [], bad: true,
+        text: '目前是必敗局面：電腦只要不出錯，你怎麼下都會輸。試著下得複雜一點，等電腦失誤吧！' };
+    } else {
+      // Prefer smaller moves first, then cycle through the rest on repeated presses.
+      const sorted = [...winning].sort((a, b) => popcount(a) - popcount(b) || a - b);
+      const mv = sorted[hintCycle % sorted.length];
+      hintCycle++;
+      selection = validate(maskToCells(mv)).ordered;
+      hint = { sel: selection.slice(), bad: false,
+        text: `目前是必勝局面！共有 ${sorted.length} 種贏法，已幫你選好其中一種` +
+          (sorted.length > 1 ? '（再按「提示」換一種）' : '') + '。' };
+    }
+    render();
+  }
+
+  function popcount(x) { let c = 0; while (x) { x &= x - 1; c++; } return c; }
 
   function isAiTurn() {
     if (over) return false;
@@ -340,6 +378,8 @@
     selection = [];
     over = false;
     memo = null;
+    hint = null;
+    hintCycle = 0;
     buildLegalMasks();
     render();
     scheduleAi();
@@ -350,6 +390,9 @@
     seg.forEach((i) => { dead[i] = true; });
     moves.push({ player: current, cells: seg });
     selection = [];
+    hint = null;
+    hintCycle = 0;
+    setMsg('點圈圈選取，或在圈圈上拖曳畫線。');
     const left = dead.filter((d) => !d).length;
     if (left === 0) {
       over = true;
@@ -384,6 +427,9 @@
     over = false;
     while (moves.length && isAiTurn()) popOne();
     selection = [];
+    hint = null;
+    hintCycle = 0;
+    setMsg('點圈圈選取，或在圈圈上拖曳畫線。');
     $('banner').classList.remove('show');
     render();
     scheduleAi();
@@ -428,7 +474,7 @@
       svg.appendChild(line);
     }
     const v = validate(selection);
-    if (v.ok && selection.length > 0) {
+    if (v.ok && selection.length > 1) {
       svg.appendChild(el('line', { ...strokePath(v.ordered), class: 'preview' }));
     }
 
@@ -453,7 +499,13 @@
     $('confirm').disabled = over || isAiTurn() || !v.ok;
     $('clear').disabled = selection.length === 0;
     $('undo').disabled = moves.length === 0 || (mode !== 'pvp' && !moves.some((m) => !isAiPlayer(m.player)));
-    if (selection.length && !v.ok && v.why) setMsg(v.why, true);
+    const hintBtn = $('hint');
+    hintBtn.hidden = mode === 'pvp';
+    hintBtn.disabled = over || isAiTurn();
+    const showingHint = hint && hint.sel.length === selection.length &&
+      hint.sel.every((i) => selection.includes(i));
+    if (showingHint) setMsg(hint.text, false, hint.bad ? 'hint bad' : 'hint');
+    else if (selection.length && !v.ok && v.why) setMsg(v.why, true);
     else if (!over && selection.length && v.ok) setMsg(`已選 ${selection.length} 顆，按「畫掉」確認。`);
 
     const log = $('log');
@@ -470,10 +522,10 @@
     return (mode === 'ai2' && p === 1) || (mode === 'ai1' && p === 0);
   }
 
-  function setMsg(text, err) {
+  function setMsg(text, err, extra) {
     const m = $('msg');
     m.textContent = text;
-    m.classList.toggle('err', !!err);
+    m.className = 'msg' + (err ? ' err' : '') + (extra ? ' ' + extra : '');
   }
 
   // ---------- input ----------
@@ -545,6 +597,7 @@
     selection = []; setMsg('點圈圈選取，或在圈圈上拖曳畫線。'); render();
   });
   $('undo').addEventListener('click', undo);
+  $('hint').addEventListener('click', showHint);
   $('restart').addEventListener('click', newGame);
   ['rows', 'mode'].forEach((id) => $(id).addEventListener('change', newGame));
   document.addEventListener('keydown', (ev) => {
